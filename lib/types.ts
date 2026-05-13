@@ -24,8 +24,28 @@ export const StockSignalSchema = z.object({
   days: z.number().nonnegative(),
   /** Spot at signal time. */
   spot: z.number().positive(),
-  /** Annualized realized vol used as σ (typically 30d). */
-  sigma_30d: z.number().nonnegative(),
+  /** Annualized vol used by the model. v2+: derived from IV when available. */
+  sigma_used: z.number().nonnegative().optional(),
+  /** Source of sigma: "iv_target" | "rv_30d" | "rv_60d". */
+  sigma_source: z.string().optional(),
+  /** Legacy alias from schema v1 — kept for old snapshots. */
+  sigma_30d: z.number().nonnegative().optional(),
+  /** 30d annualized realized vol (diagnostic, always present in v2). */
+  rv_30d: z.number().nonnegative().nullable().optional(),
+  /** 60d annualized realized vol (diagnostic). */
+  rv_60d: z.number().nonnegative().nullable().optional(),
+  /** ATM IV at the option expiry closest to close_date. */
+  iv_atm_target: z.number().nonnegative().nullable().optional(),
+  /** ATM IV at the nearest option expiry. */
+  iv_atm_front: z.number().nonnegative().nullable().optional(),
+  /** ATM IV at the back-month (~35d out) expiry. */
+  iv_atm_back: z.number().nonnegative().nullable().optional(),
+  /** iv_atm_back − iv_atm_front. Positive = contango. */
+  iv_term_slope: z.number().nullable().optional(),
+  /** Put-OTM IV − Call-OTM IV at the front expiry. Positive = crash premium. */
+  iv_skew: z.number().nullable().optional(),
+  /** ISO date of the expiry used for iv_atm_target. */
+  iv_target_expiry: z.string().nullable().optional(),
   /** Model P(YES) — accounts for side (above/below). */
   fair_yes: z.number().min(0).max(1),
   /** Polymarket YES price 0..1. */
@@ -48,7 +68,8 @@ export type StockSignal = z.infer<typeof StockSignalSchema>;
 
 export const StockEdgeSnapshotSchema = z.object({
   generated_at: z.string(),
-  schema_version: z.literal(1),
+  /** v1 = realized-vol only; v2 = IV-aware (Wave 2 / Path C). */
+  schema_version: z.union([z.literal(1), z.literal(2)]),
   universe: z.array(z.string()),
   n_scored: z.number().int().nonnegative(),
   filter: z.object({
