@@ -1,0 +1,12 @@
+# Local-only artifacts that shouldn't be in the Vercel build bundle.
+docs/screenshots/
+
+# Local visual-test scripts; reference @playwright/test which isn't a runtime dep.
+tools/
+
+# Standard ignores (defense in depth — most are already in .gitignore).
+.env.local
+.env*.local
+node_modules/
+.next/
+.vercel/
