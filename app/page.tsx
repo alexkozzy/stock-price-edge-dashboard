@@ -1,65 +1,88 @@
-import Image from "next/image";
+/**
+ * Home page — Polymarket stock-price edge table.
+ *
+ * Reads the latest snapshot via `lib/snapshot.ts`. Renders a single table
+ * sorted by |tradeable_edge_pp|, with summary stats above and a footer
+ * showing snapshot freshness + source.
+ */
+import { SignalGrid } from "@/components/SignalGrid";
+import { loadSnapshot } from "@/lib/snapshot";
 
-export default function Home() {
+export const dynamic = "force-dynamic";
+export const revalidate = 60;
+
+function relativeTime(iso: string): string {
+  const ms = Date.now() - new Date(iso).getTime();
+  if (Number.isNaN(ms) || ms < 0) return "now";
+  if (ms < 60_000) return `${Math.floor(ms / 1000)}s ago`;
+  if (ms < 3_600_000) return `${Math.floor(ms / 60_000)}m ago`;
+  if (ms < 86_400_000) return `${Math.floor(ms / 3_600_000)}h ago`;
+  return `${Math.floor(ms / 86_400_000)}d ago`;
+}
+
+export default async function HomePage() {
+  const result = await loadSnapshot();
+
+  if (!result.ok) {
+    return (
+      <section className="rounded-lg border border-rose-500/40 bg-rose-500/5 p-6 text-sm text-rose-300">
+        Could not load snapshot: <span className="font-mono">{result.error}</span>
+        <div className="mt-2 text-xs text-zinc-500">
+          Run <code className="font-mono">python -m src.scan --snapshot-dir data/snapshots</code>{" "}
+          in the stock-price-edge project to regenerate.
+        </div>
+      </section>
+    );
+  }
+
+  const { value: snap, source } = result;
+  const tradeable = snap.signals.filter(
+    (s) => s.tradeable_edge_pp !== null && Math.abs(s.tradeable_edge_pp) >= 1,
+  ).length;
+  const above5 = snap.signals.filter((s) => Math.abs(s.edge_pp) >= 5).length;
+  const tickers = new Set(snap.signals.map((s) => s.ticker)).size;
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
+    <>
+      <section className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <Kpi label="Signals" value={snap.signals.length.toString()} />
+        <Kpi label="Edge ≥5pp" value={above5.toString()} />
+        <Kpi
+          label="Tradeable"
+          value={tradeable.toString()}
+          tooltip="|edge_pp − spread_pp| ≥ 1pp"
         />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
+        <Kpi label="Tickers" value={tickers.toString()} />
+      </section>
+
+      <section className="flex items-baseline justify-between">
+        <h1 className="text-lg font-semibold tracking-tight">Edge table</h1>
+        <span className="font-mono text-xs text-zinc-500" title={snap.generated_at}>
+          snapshot {relativeTime(snap.generated_at)} · {source}
+        </span>
+      </section>
+
+      <SignalGrid signals={snap.signals} />
+    </>
+  );
+}
+
+function Kpi({
+  label,
+  value,
+  tooltip,
+}: {
+  label: string;
+  value: string;
+  tooltip?: string;
+}) {
+  return (
+    <div
+      className="rounded-lg border border-zinc-800 bg-zinc-900/40 px-4 py-3"
+      title={tooltip}
+    >
+      <div className="text-[10px] uppercase tracking-widest text-zinc-500">{label}</div>
+      <div className="mt-1 font-mono text-xl font-semibold">{value}</div>
     </div>
   );
 }
