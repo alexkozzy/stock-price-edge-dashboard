@@ -2,7 +2,8 @@
  * Snapshot loader.
  *
  * Two resolution paths:
- *   1. SNAPSHOT_BASE_URL set → fetch `${base}/snapshot_latest.json` (remote)
+ *   1. SNAPSHOT_BASE_URL set → fetch `${base}/data/snapshot_latest.json` (remote)
+ *      (GH Pages serves the data repo at the repo root; files are in /data/)
  *   2. Otherwise → read the bundled `data/snapshot_latest.json` (local)
  *
  * All loads run through Zod; on validation failure the API route returns 500
@@ -22,7 +23,7 @@ export async function loadSnapshot(): Promise<LoadResult> {
     let raw: unknown;
     let source: "remote" | "local";
     if (base) {
-      const r = await fetch(`${base}/snapshot_latest.json`, { cache: "no-store" });
+      const r = await fetch(`${base}/data/snapshot_latest.json`, { cache: "no-store" });
       if (!r.ok) {
         return { ok: false, error: `remote snapshot ${r.status}` };
       }

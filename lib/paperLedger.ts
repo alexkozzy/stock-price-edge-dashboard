@@ -40,32 +40,67 @@ export const PaperBetSchema = z.object({
 
 export type PaperBet = z.infer<typeof PaperBetSchema>;
 
-async function fetchJsonl(url: string): Promise<PaperBet[]> {
+export type FetchDebug = {
+  status: number;
+  lines: number;
+  ok: number;
+  bad: number;
+  sample_error?: string;
+  sample_first_line?: string;
+};
+
+async function fetchJsonl(url: string): Promise<{ rows: PaperBet[]; debug: FetchDebug }> {
   const r = await fetch(url, { cache: "no-store" });
-  if (!r.ok) return [];
+  const debug: FetchDebug = { status: r.status, lines: 0, ok: 0, bad: 0 };
+  if (!r.ok) return { rows: [], debug };
   const text = await r.text();
+  const lines = text.split("\n").filter((l) => l.trim());
+  debug.lines = lines.length;
+  if (lines.length > 0) debug.sample_first_line = lines[0].slice(0, 200);
   const out: PaperBet[] = [];
-  for (const line of text.split("\n")) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
+  for (const line of lines) {
     try {
-      const parsed = PaperBetSchema.safeParse(JSON.parse(trimmed));
-      if (parsed.success) out.push(parsed.data);
-    } catch {
-      // skip malformed line
+      const parsed = PaperBetSchema.safeParse(JSON.parse(line));
+      if (parsed.success) {
+        out.push(parsed.data);
+        debug.ok += 1;
+      } else {
+        debug.bad += 1;
+        if (!debug.sample_error) debug.sample_error = JSON.stringify(parsed.error.issues?.slice(0, 1));
+      }
+    } catch (e) {
+      debug.bad += 1;
+      if (!debug.sample_error) debug.sample_error = `parse: ${String(e)}`;
     }
   }
-  return out;
+  return { rows: out, debug };
 }
 
 export async function loadPaperLedger(): Promise<{ open: PaperBet[]; settled: PaperBet[] }> {
-  const base = process.env.SNAPSHOT_BASE_URL?.replace(/\/$/, "");
-  if (!base) return { open: [], settled: [] };
-  const [open, settled] = await Promise.all([
-    fetchJsonl(`${base}/paper_bets_open.jsonl`),
-    fetchJsonl(`${base}/paper_bets_settled.jsonl`),
+  const result = await loadPaperLedgerWithDebug();
+  return { open: result.open, settled: result.settled };
+}
+
+export async function loadPaperLedgerWithDebug(): Promise<{
+  open: PaperBet[];
+  settled: PaperBet[];
+  debug: { base: string | null; open?: FetchDebug; settled?: FetchDebug; reason?: string };
+}> {
+  const base = process.env.SNAPSHOT_BASE_URL?.replace(/\/$/, "") ?? null;
+  if (!base) {
+    return { open: [], settled: [], debug: { base: null, reason: "SNAPSHOT_BASE_URL not set" } };
+  }
+  // GH Pages serves the data repo at the repo root; ledger files live in
+  // /data/ inside the repo, so the URLs need that prefix.
+  const [openR, settledR] = await Promise.all([
+    fetchJsonl(`${base}/data/paper_bets_open.jsonl`),
+    fetchJsonl(`${base}/data/paper_bets_settled.jsonl`),
   ]);
-  return { open, settled };
+  return {
+    open: openR.rows,
+    settled: settledR.rows,
+    debug: { base, open: openR.debug, settled: settledR.debug },
+  };
 }
 
 export type LedgerSummary = {
